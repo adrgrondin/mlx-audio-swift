@@ -785,33 +785,19 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
 
     public static func fromPretrained(_ modelRepo: String) async throws -> Qwen3Model {
         let client = HubClient.default
-
-        // Create a unique subdirectory for this model to avoid conflicts with other downloads
-        let modelSubdir = modelRepo.replacingOccurrences(of: "/", with: "_")
-        let snapshotDir = FileManager.default.temporaryDirectory.appendingPathComponent("mlx-audio-\(modelSubdir)")
-
-
-        let progress = Progress(totalUnitCount: 0)
-
-        Task {
-            for await value in progress.publisher(for: \.fractionCompleted).values {
-                print("Snapshot download progress: \(value * 100)%")
-            }
-        }
+        let cache = client.cache ?? HubCache.default
 
         guard let repoID = Repo.ID(rawValue: modelRepo) else {
             throw NSError(domain: "Qwen3Model", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid repository ID: \(modelRepo)"])
         }
 
-        let modelDir = try await client.downloadSnapshot(
-            of: repoID,
-            kind: .model,
-            to: snapshotDir,
-            revision: "main",
-            progressHandler: { progress in
-            // Accurate progress per file
-            print("\(progress.completedUnitCount)/\(progress.totalUnitCount) files")
-        })
+        // Check if model is already fully cached (has weight files)
+        let modelDir = try await resolveOrDownloadModel(
+            client: client,
+            cache: cache,
+            repoID: repoID,
+            requiredExtension: "safetensors"
+        )
 
 
         let configPath = modelDir.appendingPathComponent("config.json")
@@ -875,4 +861,52 @@ func loadWeights(from directory: URL) throws -> [String: MLXArray] {
         weights.merge(fileWeights) { _, new in new }
     }
     return weights
+}
+
+/// Resolves a model from cache or downloads it if not cached.
+/// - Parameters:
+///   - client: The HuggingFace Hub client
+///   - cache: The HuggingFace cache
+///   - repoID: The repository ID
+///   - requiredExtension: File extension that must exist for cache to be considered complete (e.g., "safetensors")
+/// - Returns: The model directory URL
+func resolveOrDownloadModel(
+    client: HubClient,
+    cache: HubCache,
+    repoID: Repo.ID,
+    requiredExtension: String
+) async throws -> URL {
+    // Use a persistent cache directory based on repo ID
+    let modelSubdir = repoID.description.replacingOccurrences(of: "/", with: "_")
+    let modelDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        .appendingPathComponent("mlx-audio")
+        .appendingPathComponent(modelSubdir)
+
+    // Check if model already exists with required files
+    if FileManager.default.fileExists(atPath: modelDir.path) {
+        let files = try? FileManager.default.contentsOfDirectory(at: modelDir, includingPropertiesForKeys: nil)
+        let hasRequiredFiles = files?.contains { $0.pathExtension == requiredExtension } ?? false
+
+        if hasRequiredFiles {
+            print("Using cached model at: \(modelDir.path)")
+            return modelDir
+        }
+    }
+
+    // Create directory if needed
+    try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
+
+    print("Downloading model \(repoID)...")
+    _ = try await client.downloadSnapshot(
+        of: repoID,
+        kind: .model,
+        to: modelDir,
+        revision: "main",
+        progressHandler: { progress in
+            print("\(progress.completedUnitCount)/\(progress.totalUnitCount) files")
+        }
+    )
+
+    print("Model downloaded to: \(modelDir.path)")
+    return modelDir
 }
