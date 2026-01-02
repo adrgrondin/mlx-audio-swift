@@ -555,6 +555,12 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
         }
     }
 
+    public func makeCache() -> [KVCache] {
+        return (0..<self.configuration.hiddenLayers).map { _ in
+            KVCacheSimple()
+        }
+    }
+
     // MARK: - Generation using MLXLMCommon evaluate pattern
 
     /// Generate audio from text using MLXLMCommon's evaluate-style token generation.
@@ -572,6 +578,7 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
     public func generate(
         text: String,
         voice: String? = nil,
+        cache: [KVCache]? = nil,
         parameters: GenerateParameters = GenerateParameters(
             maxTokens: 1200,
             temperature: 0.6,
@@ -602,12 +609,15 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
         processor?.prompt(promptTokens)
 
         // Create KV cache
-        let cache: [KVCache] = (0..<configuration.hiddenLayers).map { _ in
-            KVCacheSimple()
+        var cache = cache
+        if cache == nil {
+            cache = self.makeCache()
         }
 
-        // Track generated tokens
-        var allTokens = inputIds
+        var generatedTokens: [Int32] = []
+        let promptTokensList = inputIds.squeezed(axis: 0).asArray(Int32.self)
+        generatedTokens.append(contentsOf: promptTokensList)
+
         let maxTokens = parameters.maxTokens ?? 1200
 
         // Prefill: process the prompt
@@ -615,39 +625,39 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
 
         // Generate tokens
         for i in 0..<maxTokens {
-            // Get logits for the last position
-            var lastLogits = logits[0..., -1, 0...]
+            let tokenValue: Int = autoreleasepool {
+                var lastLogits = logits[0..., -1, 0...]
+                lastLogits = processor?.process(logits: lastLogits) ?? lastLogits
 
-            // Apply logit processor (repetition penalty)
-            lastLogits = processor?.process(logits: lastLogits) ?? lastLogits
+                let nextToken = sampler.sample(logits: lastLogits)
+                processor?.didSample(token: nextToken)
 
-            // Sample next token
-            let nextToken = sampler.sample(logits: lastLogits)
+                let value = nextToken.item(Int.self)
 
-            // Notify processor of sampled token
-            processor?.didSample(token: nextToken)
+                if value != endOfSpeech {
+                    let nextTokenExpanded = nextToken.reshaped([1, 1])
+                    logits = self(nextTokenExpanded, cache: cache)
+                    eval(logits)
+                }
 
-            // Check for end of speech
-            let tokenValue = nextToken.item(Int.self)
+                return value
+            }
+
             if tokenValue == endOfSpeech {
                 break
             }
 
-            // Append token to sequence
-            let nextTokenExpanded = nextToken.reshaped([1, 1])
-            allTokens = concatenated([allTokens, nextTokenExpanded], axis: 1)
-
-            // Forward pass with just the new token (using cache)
-            logits = self(nextTokenExpanded, cache: cache)
+            generatedTokens.append(Int32(tokenValue))
 
             // Periodically clear GPU cache
             if i % 50 == 0 {
                 Memory.clearCache()
             }
-
-            // Async evaluation for pipelining
-            eval(logits)
         }
+
+        Memory.clearCache()
+
+        let allTokens = MLXArray(generatedTokens).expandedDimensions(axis: 0)
 
         // Parse output to audio codes
         let codeLists = parseOutput(allTokens)
@@ -658,6 +668,10 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
 
         // Decode audio using SNAC
         let audio = decodeAudioFromCodes(codeList: codeList, snacModel: snacModel)
+        audio.eval()
+
+        // Clear SNAC decoder intermediates
+        Memory.clearCache()
 
         return audio
     }
@@ -674,6 +688,7 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
     public func generateStream(
         text: String,
         voice: String? = nil,
+        cache: [KVCache]? = nil,
         parameters: GenerateParameters = GenerateParameters(
             maxTokens: 1200,
             temperature: 0.6,
@@ -702,56 +717,72 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
 
                     let promptTokens = inputIds.squeezed(axis: 0)
                     processor?.prompt(promptTokens)
-
-                    let cache: [KVCache] = (0..<self.configuration.hiddenLayers).map { _ in
-                        KVCacheSimple()
+                    var cache = cache
+                    if cache == nil {
+                        cache = self.makeCache()
                     }
 
-                    var allTokens = inputIds
+                    // Collect tokens in Swift array to avoid MLXArray concatenation memory buildup
+                    var generatedTokens: [Int32] = []
+                    let promptTokensList = inputIds.squeezed(axis: 0).asArray(Int32.self)
+                    generatedTokens.append(contentsOf: promptTokensList)
+
                     let maxTokens = parameters.maxTokens ?? 1200
 
                     let startTime = Date()
 
                     // Prefill
+                    var tokenCount: Int = 0
                     var logits = self(inputIds, cache: cache)
                     let prefillTime = Date().timeIntervalSince(startTime)
 
-                    var tokenCount = 0
                     let generateStartTime = Date()
 
                     // Generate tokens
-                    for _ in 0..<maxTokens {
+                    for i in 0..<maxTokens {
                         if Task.isCancelled { break }
 
-                        var lastLogits = logits[0..., -1, 0...]
-                        lastLogits = processor?.process(logits: lastLogits) ?? lastLogits
+                        // Extract token value and advance - minimize intermediate tensor lifetime
+                        let tokenValue: Int = autoreleasepool {
+                            var lastLogits = logits[0..., -1, 0...]
+                            lastLogits = processor?.process(logits: lastLogits) ?? lastLogits
 
-                        let nextToken = sampler.sample(logits: lastLogits)
-                        processor?.didSample(token: nextToken)
+                            let nextToken = sampler.sample(logits: lastLogits)
+                            processor?.didSample(token: nextToken)
 
-                        let tokenValue = nextToken.item(Int.self)
+                            let value = nextToken.item(Int.self)
+
+                            // Forward pass with cache
+                            if value != endOfSpeech {
+                                let nextTokenExpanded = nextToken.reshaped([1, 1])
+                                logits = self(nextTokenExpanded, cache: cache)
+                                eval(logits)
+                            }
+
+                            return value
+                        }
+
                         tokenCount += 1
 
-                        // Yield token event
                         continuation.yield(.token(tokenValue))
 
                         if tokenValue == endOfSpeech {
                             break
                         }
 
-                        let nextTokenExpanded = nextToken.reshaped([1, 1])
-                        allTokens = concatenated([allTokens, nextTokenExpanded], axis: 1)
+                        // Collect token in Swift array (no MLXArray concatenation)
+                        generatedTokens.append(Int32(tokenValue))
 
-                        logits = self(nextTokenExpanded, cache: cache)
-
-                        if tokenCount % 50 == 0 {
+                        // Clear GPU cache periodically to free intermediate tensors
+                        if i % 50 == 0 {
                             Memory.clearCache()
                         }
-
-                        eval(logits)
                     }
 
                     let generateTime = Date().timeIntervalSince(generateStartTime)
+
+
+                    let allTokens = MLXArray(generatedTokens).expandedDimensions(axis: 0)
 
                     // Parse and decode audio
                     let codeLists = self.parseOutput(allTokens)
@@ -762,6 +793,8 @@ public class Qwen3Model: Module, KVCacheDimensionProvider {
 
                     let audio = decodeAudioFromCodes(codeList: codeList, snacModel: snacModel)
                     audio.eval()
+
+                    Memory.clearCache()
 
                     // Yield completion info
                     let info = Qwen3GenerationInfo(

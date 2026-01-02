@@ -68,7 +68,13 @@ public enum WAVWriterError: Error {
 }
 
 public func saveAudioArray(_ audio: MLXArray, sampleRate: Double, to url: URL) throws {
-    let frames = audio.shape[0]
+    let samples = audio.asArray(Float.self)
+    try saveAudioSamples(samples, sampleRate: sampleRate, to: url)
+}
+
+/// Save audio samples directly from a Float array (avoids GPU memory copy)
+public func saveAudioSamples(_ samples: [Float], sampleRate: Double, to url: URL) throws {
+    let frames = samples.count
     guard frames > 0 else { throw WAVWriterError.noFrames }
 
     guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: AVAudioChannelCount(1), interleaved: false) else {
@@ -79,15 +85,12 @@ public func saveAudioArray(_ audio: MLXArray, sampleRate: Double, to url: URL) t
     }
     buffer.frameLength = AVAudioFrameCount(frames)
 
-    let channels = [audio.asArray(Float32.self)]
     guard let dst = buffer.floatChannelData else {
         throw WAVWriterError.bufferAllocFailed
     }
-    for (c, channel) in channels.enumerated() {
-        channel.withUnsafeBufferPointer { src in
-            guard let baseAddress = src.baseAddress else { return }
-            dst[c].update(from: baseAddress, count: frames)
-        }
+    samples.withUnsafeBufferPointer { src in
+        guard let baseAddress = src.baseAddress else { return }
+        dst[0].update(from: baseAddress, count: frames)
     }
 
     let file = try AVAudioFile(forWriting: url, settings: format.settings)
