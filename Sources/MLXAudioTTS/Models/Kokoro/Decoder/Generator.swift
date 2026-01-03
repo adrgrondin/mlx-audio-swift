@@ -146,7 +146,6 @@ class Generator {
   }
 
   func callAsFunction(_ x: MLXArray, _ s: MLXArray, _ F0Curve: MLXArray) -> MLXArray {
-    BenchmarkTimer.shared.create(id: "GeneratorStart", parent: "Decoder")
 
     var f0New = F0Curve[.newAxis, 0..., 0...].transposed(0, 2, 1)
     f0New = f0Upsample(f0New)
@@ -201,12 +200,9 @@ class Generator {
     spec.eval()
     phase.eval()
 
-    BenchmarkTimer.shared.stop(id: "GeneratorStart")
 
-    BenchmarkTimer.shared.create(id: "InverseSTFT", parent: "Decoder")
     let result = stft.inverse(magnitude: spec, phase: phase)
     result.eval()
-    BenchmarkTimer.shared.stop(id: "InverseSTFT")
 
     return result
   }

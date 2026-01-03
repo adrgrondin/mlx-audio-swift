@@ -143,7 +143,6 @@ func mlxIstft(
   winLength: Int? = nil,
   window: Any = "hann"
 ) -> MLXArray {
-  BenchmarkTimer.shared.create(id: "StartProcessing", parent: "Istft")
 
   let winLen = winLength ?? ((x.shape[1] - 1) * 2)
   let hopLen = hopLength ?? (winLen / 4)
@@ -161,12 +160,7 @@ func mlxIstft(
   let totalWsquared = MLX.concatenated(Array(repeating: wSquared, count: t / winLen))
 
   xTransposed.eval()
-  BenchmarkTimer.shared.stop(id: "StartProcessing")
 
-//  let fft = BenchmarkTimer.shared.create(id: "FFT", parent: "Istft")!
-//  let overlap = BenchmarkTimer.shared.create(id: "Overlap", parent: "Istft")!
-
-//  fft.startTimer()
   let output = MLXFFT.irfft(xTransposed, axis: 1) * w
   output.eval()
 
@@ -202,16 +196,12 @@ func mlxIstft(
   reconstructed.eval()
   windowSum.eval()
 
-//  overlap.stop()
-
-  BenchmarkTimer.shared.create(id: "EndProcessing", parent: "Istft")
 
   reconstructed =
     reconstructed[winLen / 2 ..< (reconstructed.shape[0] - winLen / 2)] /
     windowSum[winLen / 2 ..< (reconstructed.shape[0] - winLen / 2)]
   reconstructed.eval()
 
-  BenchmarkTimer.shared.stop(id: "EndProcessing")
 
   return reconstructed
 }
