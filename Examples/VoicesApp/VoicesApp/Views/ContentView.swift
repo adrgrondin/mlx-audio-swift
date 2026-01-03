@@ -1,5 +1,90 @@
 import SwiftUI
 
+// MARK: - Compact Slider (iOS)
+
+#if os(iOS)
+struct CompactToggle: View {
+    let label: String
+    @Binding var isOn: Bool
+    var font: Font = .footnote
+    var toggleWidth: CGFloat = 40
+    var toggleHeight: CGFloat = 24
+    var thumbSize: CGFloat = 20
+    var tint: Color = .blue
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(font)
+            Spacer()
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? tint : Color.gray.opacity(0.3))
+                    .frame(width: toggleWidth, height: toggleHeight)
+
+                Circle()
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .padding(2)
+            }
+            .animation(.easeInOut(duration: 0.15), value: isOn)
+            .onTapGesture {
+                isOn.toggle()
+            }
+        }
+    }
+}
+
+struct CompactSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double? = nil
+    var thumbSize: CGFloat = 16
+    var trackHeight: CGFloat = 4
+    var tint: Color = .blue
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let thumbOffset = (value - range.lowerBound) / (range.upperBound - range.lowerBound) * (width - thumbSize)
+
+            ZStack(alignment: .leading) {
+                // Track background
+                Capsule()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(height: trackHeight)
+
+                // Track fill
+                Capsule()
+                    .fill(tint)
+                    .frame(width: thumbOffset + thumbSize / 2, height: trackHeight)
+
+                // Thumb
+                Circle()
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: thumbOffset)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { gesture in
+                                let newValue = range.lowerBound + (gesture.location.x / width) * (range.upperBound - range.lowerBound)
+                                let clampedValue = min(max(newValue, range.lowerBound), range.upperBound)
+                                if let step = step {
+                                    value = (clampedValue / step).rounded() * step
+                                } else {
+                                    value = clampedValue
+                                }
+                            }
+                    )
+            }
+        }
+        .frame(height: thumbSize)
+    }
+}
+#endif
+
 struct ContentView: View {
     @State private var viewModel = TTSViewModel()
     @State private var textInput = ""
@@ -9,36 +94,59 @@ struct ContentView: View {
     @State private var recentlyUsed: [Voice] = Voice.samples
     @State private var customVoices: [Voice] = Voice.customVoices
 
+    #if os(iOS)
+    private let buttonHeight: CGFloat = 36
+    private let buttonFont: Font = .footnote
+    private let inputFont: Font = .body
+    #else
+    private let buttonHeight: CGFloat = 44
+    private let buttonFont: Font = .subheadline
+    private let inputFont: Font = .title2
+    #endif
+
     var body: some View {
         VStack(spacing: 0) {
-            // Main text input area
-            VStack(alignment: .leading) {
-                TextField("Start typing here...", text: $textInput, axis: .vertical)
-                    .font(.title)
-                    .textFieldStyle(.plain)
-                    .disabled(viewModel.isGenerating)
-                    .padding(.top, 20)
+            // Main text input area - fills available space
+            TextEditor(text: $textInput)
+                .font(inputFont)
+                .scrollContentBackground(.hidden)
+                .background(.clear)
+                .disabled(viewModel.isGenerating)
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+                .overlay(alignment: .topLeading) {
+                    if textInput.isEmpty {
+                        Text("Start typing here...")
+                            .font(inputFont)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .allowsHitTesting(false)
+                    }
+                }
 
-                Spacer()
-
+            // Bottom content (status, player)
+            VStack(spacing: 4) {
                 // Status/Progress
                 if !viewModel.generationProgress.isEmpty {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ProgressView()
-                            .scaleEffect(0.8)
+                            .scaleEffect(0.6)
                         Text(viewModel.generationProgress)
-                            .font(.subheadline)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
                 }
 
                 // Error message
                 if let error = viewModel.errorMessage {
                     Text(error)
-                        .font(.subheadline)
+                        .font(.caption2)
                         .foregroundStyle(.red)
-                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
                 }
 
                 // Audio player
@@ -50,18 +158,18 @@ struct ContentView: View {
                         onPlayPause: { viewModel.togglePlayPause() },
                         onSeek: { viewModel.seek(to: $0) }
                     )
-                    .padding(.bottom, 16)
+                    .padding(.horizontal)
                 }
             }
-            .padding(.horizontal)
+            .padding(.bottom, 4)
 
             // Bottom bar
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 // Voice selector chip
                 Button(action: { showVoices = true }) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if let voice = selectedVoice {
-                            VoiceAvatar(color: voice.color, size: 24)
+                            VoiceAvatar(color: voice.color, size: 20)
                             Text("\(voice.name)")
                                 .lineLimit(1)
                         } else {
@@ -69,10 +177,10 @@ struct ContentView: View {
                             Text("Voice")
                         }
                     }
-                    .font(.subheadline)
+                    .font(buttonFont)
                     .foregroundStyle(.primary)
-                    .frame(height: 44)
-                    .padding(.horizontal, 16)
+                    .frame(height: buttonHeight)
+                    .padding(.horizontal, 12)
                     .background(Color.gray.opacity(0.2))
                     .clipShape(Capsule())
                 }
@@ -81,13 +189,15 @@ struct ContentView: View {
                 // Settings button
                 Button(action: { showSettings = true }) {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.body)
+                        .font(buttonFont)
                         .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
+                        .frame(width: buttonHeight, height: buttonHeight)
                         .background(Color.gray.opacity(0.2))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+
+                Spacer()
 
                 // Generate / Stop button
                 if viewModel.isGenerating {
@@ -95,11 +205,11 @@ struct ContentView: View {
                         viewModel.stop()
                     }) {
                         Text("Stop")
-                            .font(.subheadline)
+                            .font(buttonFont)
                             .fontWeight(.medium)
                             .foregroundStyle(.white)
-                            .frame(height: 44)
-                            .padding(.horizontal, 20)
+                            .frame(height: buttonHeight)
+                            .padding(.horizontal, 16)
                             .background(Color.red)
                             .clipShape(Capsule())
                     }
@@ -113,11 +223,11 @@ struct ContentView: View {
                         }
                     }) {
                         Text("Generate")
-                            .font(.subheadline)
+                            .font(buttonFont)
                             .fontWeight(.medium)
                             .foregroundStyle(canGenerate ? .white : .secondary)
-                            .frame(height: 44)
-                            .padding(.horizontal, 20)
+                            .frame(height: buttonHeight)
+                            .padding(.horizontal, 16)
                             .background(canGenerate ? Color.blue : Color.gray.opacity(0.2))
                             .clipShape(Capsule())
                     }
@@ -125,8 +235,15 @@ struct ContentView: View {
                     .disabled(!canGenerate)
                 }
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            #if os(iOS)
+            .background(Color(uiColor: .systemBackground).opacity(0.95))
+            #else
+            .background(.bar)
+            #endif
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showVoices) {
             VoicesView(
                 recentlyUsed: $recentlyUsed,
@@ -135,9 +252,17 @@ struct ContentView: View {
                 selectedVoice = voice
                 showVoices = false
             }
+            #if os(iOS)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            #endif
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(viewModel: viewModel)
+                #if os(iOS)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                #endif
         }
         .task {
             await viewModel.loadModel()
@@ -302,18 +427,37 @@ struct CompactAudioPlayer: View {
     let onPlayPause: () -> Void
     let onSeek: (TimeInterval) -> Void
 
+    #if os(iOS)
+    private let playButtonSize: CGFloat = 32
+    private let spacing: CGFloat = 8
+    private let padding: CGFloat = 8
+    #else
+    private let playButtonSize: CGFloat = 44
+    private let spacing: CGFloat = 12
+    private let padding: CGFloat = 12
+    #endif
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: spacing) {
             // Play/Pause button
             Button(action: onPlayPause) {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 44))
+                    .font(.system(size: playButtonSize))
                     .foregroundStyle(.blue)
             }
             .buttonStyle(.plain)
 
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 // Progress bar
+                #if os(iOS)
+                CompactSlider(
+                    value: Binding(
+                        get: { currentTime },
+                        set: { onSeek($0) }
+                    ),
+                    range: 0...max(duration, 0.01)
+                )
+                #else
                 Slider(
                     value: Binding(
                         get: { currentTime },
@@ -322,6 +466,7 @@ struct CompactAudioPlayer: View {
                     in: 0...max(duration, 0.01)
                 )
                 .tint(.blue)
+                #endif
 
                 // Time labels
                 HStack {
@@ -337,9 +482,9 @@ struct CompactAudioPlayer: View {
                 }
             }
         }
-        .padding(12)
+        .padding(padding)
         .background(Color.gray.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private func formatTime(_ time: TimeInterval) -> String {

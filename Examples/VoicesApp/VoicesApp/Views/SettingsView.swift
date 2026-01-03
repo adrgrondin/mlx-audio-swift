@@ -5,27 +5,52 @@ struct SettingsView: View {
     @Bindable var viewModel: TTSViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            Text("Settings")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .padding(.top, 20)
-                .padding(.bottom, 24)
-                .frame(maxWidth: .infinity)
+        NavigationStack {
+            ScrollView {
+                settingsContent
+            }
+            .navigationTitle("Settings")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 450, minHeight: 700)
+        #endif
+    }
 
+    #if os(iOS)
+    private let sectionSpacing: CGFloat = 12
+    private let labelFont: Font = .caption
+    private let textFont: Font = .footnote
+    private let horizontalPadding: CGFloat = 16
+    #else
+    private let sectionSpacing: CGFloat = 16
+    private let labelFont: Font = .subheadline
+    private let textFont: Font = .subheadline
+    private let horizontalPadding: CGFloat = 20
+    #endif
+
+    private var settingsContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
             // Model Section
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Model")
-                    .font(.subheadline)
+                    .font(labelFont)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     TextField("Model ID", text: $viewModel.modelId)
+                        .font(textFont)
                         .textFieldStyle(.plain)
-                        .padding(10)
+                        .padding(8)
                         .background(Color.gray.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
 
                     Button(action: {
                         Task {
@@ -33,39 +58,47 @@ struct SettingsView: View {
                         }
                     }) {
                         Text("Load")
-                            .font(.subheadline)
+                            .font(textFont)
                             .fontWeight(.medium)
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
                             .background(Color.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
                     .disabled(viewModel.isLoading)
                 }
-                .padding(.top, 8)
-
-                Text("Hugging Face model ID (e.g., mlx-community/VyvoTTS-EN-Beta-4bit)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(.top, 4)
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, sectionSpacing)
 
             // Length Section
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Length")
-                    .font(.subheadline)
+                    .font(labelFont)
                     .foregroundStyle(.secondary)
 
                 HStack {
                     Text("Max Tokens")
+                        .font(textFont)
                     Spacer()
                     Text("\(viewModel.maxTokens)")
+                        .font(textFont)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.top, 8)
+                .padding(.top, 4)
 
+                #if os(iOS)
+                CompactSlider(
+                    value: Binding(
+                        get: { Double(viewModel.maxTokens) },
+                        set: { viewModel.maxTokens = Int($0) }
+                    ),
+                    range: 100...2000,
+                    step: 100
+                )
+                #else
                 Slider(
                     value: Binding(
                         get: { Double(viewModel.maxTokens) },
@@ -75,27 +108,36 @@ struct SettingsView: View {
                     step: 100
                 )
                 .tint(.blue)
-
-                Text("Controls the maximum length of generated audio. Higher values allow longer speech.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                #endif
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, sectionSpacing)
 
             // Temperature Section
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Temperature")
-                    .font(.subheadline)
+                    .font(labelFont)
                     .foregroundStyle(.secondary)
 
                 HStack {
                     Text("Temperature")
+                        .font(textFont)
                     Spacer()
                     Text(String(format: "%.2f", viewModel.temperature))
+                        .font(textFont)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.top, 8)
+                .padding(.top, 4)
 
+                #if os(iOS)
+                CompactSlider(
+                    value: Binding(
+                        get: { Double(viewModel.temperature) },
+                        set: { viewModel.temperature = Float($0) }
+                    ),
+                    range: 0.0...1.0,
+                    step: 0.05
+                )
+                #else
                 Slider(
                     value: Binding(
                         get: { Double(viewModel.temperature) },
@@ -105,27 +147,36 @@ struct SettingsView: View {
                     step: 0.05
                 )
                 .tint(.blue)
-
-                Text("Controls randomness. Lower values are more deterministic, higher values are more creative.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                #endif
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, sectionSpacing)
 
             // Top P Section
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Top P (Nucleus Sampling)")
-                    .font(.subheadline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Top P")
+                    .font(labelFont)
                     .foregroundStyle(.secondary)
 
                 HStack {
                     Text("Top P")
+                        .font(textFont)
                     Spacer()
                     Text(String(format: "%.2f", viewModel.topP))
+                        .font(textFont)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.top, 8)
+                .padding(.top, 4)
 
+                #if os(iOS)
+                CompactSlider(
+                    value: Binding(
+                        get: { Double(viewModel.topP) },
+                        set: { viewModel.topP = Float($0) }
+                    ),
+                    range: 0.0...1.0,
+                    step: 0.05
+                )
+                #else
                 Slider(
                     value: Binding(
                         get: { Double(viewModel.topP) },
@@ -135,35 +186,53 @@ struct SettingsView: View {
                     step: 0.05
                 )
                 .tint(.blue)
-
-                Text("Nucleus sampling threshold. Lower values focus on more likely tokens.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                #endif
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, sectionSpacing)
 
             // Text Chunking Section
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Text Chunking")
-                    .font(.subheadline)
+                    .font(labelFont)
                     .foregroundStyle(.secondary)
 
-                Toggle("Enable chunking for long text", isOn: $viewModel.enableChunking)
-                    .padding(.top, 8)
+                #if os(iOS)
+                CompactToggle(label: "Chunk text", isOn: $viewModel.enableChunking, font: textFont)
+                    .padding(.top, 4)
+                #else
+                Toggle("Chunk text", isOn: $viewModel.enableChunking)
+                    .font(textFont)
+                    .padding(.top, 4)
+                #endif
 
                 if viewModel.enableChunking {
+                    #if os(iOS)
+                    CompactToggle(label: "Stream audio", isOn: $viewModel.streamingPlayback, font: textFont)
+                    #else
                     Toggle("Stream audio", isOn: $viewModel.streamingPlayback)
-                        .padding(.top, 4)
-
+                        .font(textFont)
+                    #endif
 
                     HStack {
                         Text("Max chunk length")
+                            .font(textFont)
                         Spacer()
                         Text("\(viewModel.maxChunkLength)")
+                            .font(textFont)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.top, 8)
+                    .padding(.top, 4)
 
+                    #if os(iOS)
+                    CompactSlider(
+                        value: Binding(
+                            get: { Double(viewModel.maxChunkLength) },
+                            set: { viewModel.maxChunkLength = Int($0) }
+                        ),
+                        range: 100...500,
+                        step: 50
+                    )
+                    #else
                     Slider(
                         value: Binding(
                             get: { Double(viewModel.maxChunkLength) },
@@ -173,68 +242,42 @@ struct SettingsView: View {
                         step: 50
                     )
                     .tint(.blue)
+                    #endif
 
-                    HStack {
-                        Text("Split pattern")
-                        Spacer()
-                    }
-                    .padding(.top, 8)
-
-                    TextField("Pattern (regex)", text: $viewModel.splitPattern)
+                    TextField("Split pattern", text: $viewModel.splitPattern)
+                        .font(textFont)
                         .textFieldStyle(.plain)
-                        .padding(10)
+                        .padding(8)
                         .background(Color.gray.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    Text("Split on this pattern first, then by sentences. Examples: \\n (newline), [.!?]\\s+ (sentences)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
 
-            Spacer()
-
-            // Bottom buttons
-            HStack {
-                Button(action: {
-                    viewModel.modelId = "mlx-community/VyvoTTS-EN-Beta-4bit"
-                    viewModel.maxTokens = 1200
-                    viewModel.temperature = 0.6
-                    viewModel.topP = 0.8
-                    viewModel.enableChunking = true
-                    viewModel.maxChunkLength = 200
-                    viewModel.splitPattern = "\n"
-                    viewModel.streamingPlayback = true
-                }) {
-                    Text("Reset to Defaults")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button(action: { dismiss() }) {
-                    Text("Done")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 10)
-                        .background(Color.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
+            // Reset button
+            Button(action: {
+                viewModel.modelId = "mlx-community/VyvoTTS-EN-Beta-4bit"
+                viewModel.maxTokens = 1200
+                viewModel.temperature = 0.6
+                viewModel.topP = 0.8
+                viewModel.enableChunking = true
+                viewModel.maxChunkLength = 200
+                viewModel.splitPattern = "\n"
+                viewModel.streamingPlayback = true
+            }) {
+                Text("Reset to Defaults")
+                    .font(textFont)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
-            .padding(.bottom, 20)
+            .buttonStyle(.plain)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
         }
-        .padding(.horizontal, 24)
-        .frame(minWidth: 450, minHeight: 700)
+        .padding(.horizontal, horizontalPadding)
     }
 }
 
