@@ -205,6 +205,19 @@ class TTSViewModel {
         tokensPerSecond = 0
 
         do {
+            // Load reference audio if this is a cloned voice
+            var refAudio: MLXArray? = nil
+            var refText: String? = nil
+
+            if let voice = voice, voice.isClonedVoice,
+               let audioURL = voice.audioFileURL,
+               let transcription = voice.transcription {
+                generationProgress = "Loading reference audio..."
+                let (_, audioData) = try loadAudioArray(from: audioURL)
+                refAudio = audioData
+                refText = transcription
+            }
+
             // Split text into chunks
             let chunks = chunkText(text)
             let sampleRate = Double(model.sampleRate)
@@ -241,6 +254,8 @@ class TTSViewModel {
                 for try await event in model.generateStream(
                     text: chunk,
                     voice: voice?.name,
+                    refAudio: refAudio,
+                    refText: refText,
                     cache: nil,
                     parameters: .init(
                         maxTokens: maxTokens,

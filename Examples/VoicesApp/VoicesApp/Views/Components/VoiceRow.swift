@@ -9,14 +9,39 @@ struct VoiceRow: View {
     var body: some View {
         Button(action: { onTap?() }) {
             HStack(spacing: 12) {
-                // Voice avatar
-                VoiceAvatar(color: voice.color, size: 44)
+                // Voice avatar with clone indicator
+                ZStack(alignment: .bottomTrailing) {
+                    VoiceAvatar(color: voice.color, size: 44)
+
+                    if voice.isClonedVoice {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(4)
+                            .background(Color.blue)
+                            .clipShape(Circle())
+                            .offset(x: 4, y: 4)
+                    }
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(voice.name)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 4) {
+                        Text(voice.name)
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+
+                        if voice.isClonedVoice {
+                            Text("Clone")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                    }
 
                     if !voice.description.isEmpty {
                         Text(voice.description)
@@ -83,11 +108,29 @@ struct VoiceChip: View {
     var body: some View {
         Button(action: { onTap?() }) {
             HStack(spacing: 8) {
-                VoiceAvatar(color: voice.color, size: 28)
+                ZStack(alignment: .bottomTrailing) {
+                    VoiceAvatar(color: voice.color, size: 28)
 
-                Text("\(voice.name) - \(voice.description)")
+                    if voice.isClonedVoice {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 6, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(2)
+                            .background(Color.blue)
+                            .clipShape(Circle())
+                            .offset(x: 2, y: 2)
+                    }
+                }
+
+                Text("\(voice.name)\(voice.description.isEmpty ? "" : " - \(voice.description)")")
                     .font(.subheadline)
                     .foregroundStyle(.primary)
+
+                if voice.isClonedVoice {
+                    Image(systemName: "waveform")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
